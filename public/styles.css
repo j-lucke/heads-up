@@ -1,0 +1,97 @@
+
+button:hover {
+    cursor: pointer;
+}
+
+#header {
+    display: flex;
+    flex-direction: row;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4rem;
+    background-color: blue;
+}
+
+#header-list {
+    display: flex;
+    flex-direction: row;
+    list-style-type: none;  
+    align-items: center;  
+}
+
+#title {
+    color: white;
+    font-size: 3rem;
+}
+
+#login-link {
+    width: 6rem;
+    margin-left: 2rem;
+}
+
+#login-link:hover {
+    cursor: pointer;
+}
+
+#challenge-banner {
+    position: fixed;
+    display: none;
+    flex-direction: row;
+    top: 4rem;
+    left: 0;
+    right: 0;
+    height: 3rem;
+    background-color: white;
+    border: 1px solid black;
+    z-index: 2; 
+    align-items: center;
+}
+
+#banner-text {
+    margin-left: 4rem;
+    margin-right: 2rem;
+    color: red;
+}
+
+#challenge-banner > button {
+    width: 6rem;
+    height: 2rem;
+    margin: .5rem;
+}
+
+#players-container{
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 3rem;
+    top: 4rem;
+    width: 10rem;
+    bottom: 0;
+    background-color: lightgray;
+    border-top: 1px solid white;
+}
+
+#players {
+    list-style-type: none;
+}
+
+#players > li {
+    margin-top: .5rem;
+}
+
+#players-title {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+#players > li:hover {
+    cursor: pointer;
+    color: red;
+}
+
+#games {
+
+}
