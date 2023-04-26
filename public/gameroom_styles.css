@@ -1,0 +1,67 @@
+#action-bar {
+    position: fixed;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    bottom: 2rem;
+    left: 0;
+    right: 0;
+    height: 4rem;
+    border: 1px solid black;
+}
+
+#action-buttons {
+    display: none;
+    flex-direction: row;
+}
+
+#action-buttons > button {
+    width: 6rem;
+    margin-left: .25rem;
+}
+
+#sit{
+    position: fixed;
+    left: 3rem;
+    height: 4rem;
+}
+
+#his-pocket-bar {
+    position: fixed;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    left: 0;
+    right: 0;
+    top: 1rem;
+    height: 7rem;
+}
+
+#board-bar {
+    position: fixed;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    left: 0;
+    right: 0;
+    top: 30%;
+    height: 8rem;
+}
+
+#pocket-bar {
+    position: fixed;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    left: 0;
+    right: 0;
+    bottom: 6rem;
+    height: 10em;
+}
+
+#my-pocket-1 {
+
+}
+
+#my-pocket-2 {
+}

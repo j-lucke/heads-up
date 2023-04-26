@@ -5,7 +5,7 @@ const express = require('express')
 
 
 function log(req, res, next) {
-    console.log(req.url)
+    console.log(req.method + req.url)
     next()
 }
 
@@ -14,7 +14,36 @@ const httpServer = createServer(app);
 const io = new Server(httpServer)
 
 //app.use(log)
+app.get('/', (req, res) => {
+    console.log('redirect')
+    res.redirect('/match/1234')
+})
+
 app.use(express.static(path.join(__dirname, 'public')))
+app.get('/match/:room', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/gameroom.html'))
+})
+
+const SUITS = ['s', 'h', 'd', 'c']
+const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+
+let DECK = []
+
+for (s = 0; s < 4; s++)
+    for (r = 0; r < 13; r++)
+        DECK.push(RANKS[r]+SUITS[s])
+
+function getRandomInt(max) {
+    return Math.floor(Math.random() * max);
+}
+
+function deal() {
+    const index = getRandomInt(deck.length)
+    const card = deck[index]
+    deck.splice(index, 1)
+    return card
+}
+
 
 class User {
     constructor(socket) {
@@ -22,6 +51,27 @@ class User {
         this.awaitingReconnect = false
         this.username = null
         this.socket = socket
+    }
+}
+
+class Match {
+    constructor(room, player1, player2) {
+        this.room = room
+        this.player1 = player1
+        this.player2 = player2
+        this.state = 'empty'
+    }
+
+}
+
+class Game{
+    constructor(id, first, last) {
+        this.meta = {id: id, first: first, last: last}
+        this.state = {id: id, street: null, board: [], bettor: null, action: null}
+        this.firstPocket = []
+        this.lastPocket = []
+        this.deck = DECK.slice()
+        this.history = []
     }
 }
 
@@ -43,6 +93,8 @@ function print(str) {
 
 users = []
 players = []
+matches = []
+games = []
 
 io.use((socket, next)=> {
     const sessionID = socket.handshake.auth.sessionID
@@ -61,15 +113,27 @@ io.use((socket, next)=> {
         users[index].socket = socket
     }
 
+    //this next block is for testing
+    const user = users.find(x => x.sessionID == socket.sessionID)
+    user.username = user.sessionID
+    if (!players.includes(user)) {
+        players.push(user)
+    }
+    matches[0] = new Match('1234', players[0], players[1])
+    console.log(matches[0])
+    //end testing
+
     print('connection!')
     next()
 })
+
+
 
 io.on('connection', (socket) => {
     let playerName = findUser(socket.sessionID).username
     socket.emit('sessionID', socket.sessionID, playerName)
     socket.emit('players', players.map(x => x.username))
-
+    console.log(socket.id)
     socket.on('login', (username)=> {
         const user = findUser(socket.sessionID)
         if (user) {
@@ -100,7 +164,13 @@ io.on('connection', (socket) => {
 
     socket.on('accept', opponent => {
         const challenger = players.find(x => x.username == opponent)
+        const challengee = findUser(socket.sessionID)
         challenger.socket.emit('accepted')
+        const room = '/match/' + Math.floor(Math.random() * 100000)
+        const match = new Match(room, challenger.username, challengee.username)
+        challenger.socket.emit('new match', match)
+        challengee.socket.emit('new match', match)
+        matches.push(match)
     })
 
     socket.on('decline', opponent => {
@@ -110,6 +180,34 @@ io.on('connection', (socket) => {
     socket.on('abort', opponent => {
         const challengee = players.find(x => x.username == opponent)
         challengee.socket.emit('aborted')
+    })
+
+    socket.on('ready', room => {
+        const match = matches.find(x => x.room == room)
+        if (match.state == 'empty') {
+            match.state = 'waiting'
+            return
+        }
+        if (match.state == 'waiting') {
+            match.state = 'playing'
+            const game = new Game(games.length, match.player1, match.player2)
+            games.push(game)
+            game.state.street = 'preflop'
+            game.state.bettor = game.meta.first.username
+            game.meta.first.socket.emit('action', game.state)
+        } 
+        
+    })
+
+    socket.on('action', (state) => {
+        let nextPlayer = null
+        const game = games.find(x => x.meta.id == state.id)
+        if (state.bettor == game.meta.first.username)
+            nextPlayer = game.meta.last
+        else 
+            nextPlayer = game.meta.first
+        state.bettor = nextPlayer.username
+        nextPlayer.socket.emit('action', state)
     })
 
     socket.on('disconnect', () => {

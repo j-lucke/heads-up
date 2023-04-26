@@ -11,7 +11,6 @@ const declineChallenge = document.getElementById('decline-challenge')
 
 
 
-sessionStorage.removeItem('username')
 let sessionID = sessionStorage.getItem('sessionID')
 let username = null
 let challengeOpponent = null
@@ -83,7 +82,9 @@ socket.on('test', () => {console.log('test')})
 socket.on('accepted', () => {
     abortChallenge.style.display = 'none'
     bannerText.innerText = 'challenge accepted!'
-    setTimeout(() => {challengeBanner.style.display = 'none'}, 2000)
+    setTimeout(() => {
+        challengeBanner.style.display = 'none'
+    }, 2000)
 })
 
 socket.on('declined', () => {
@@ -138,4 +139,9 @@ socket.on('player down', playername => {
         return
     const li = document.getElementById(playername)
     li.remove()
+})
+
+socket.on('new match', match => {
+    sessionStorage.setItem('room', match.room)
+    window.location.href = match.room
 })
