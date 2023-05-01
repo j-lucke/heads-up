@@ -2,6 +2,7 @@ const { createServer } = require("http")
 const { Server } = require("socket.io")
 const path = require('path')
 const express = require('express')
+const Hand = require('pokersolver').Hand
 
 
 function log(req, res, next) {
@@ -58,7 +59,9 @@ class Match {
     constructor(room, player1, player2) {
         this.room = room
         this.player1 = player1
+        this.player1.stack = 1000
         this.player2 = player2
+        this.player2.stack = 1000
         this.sitting = 0
         this.log = []
         this.status = 'waiting'
@@ -70,7 +73,22 @@ class Game{
     constructor(id, first, last) {
         this.room = this.room
         this.meta = {id: id, first: first, last: last}
-        this.state = {id: id, street: 'preflop', board: [], bettor: null, action: null, previousAction: null}
+        this.state = {
+            id: id, 
+            street: 'preflop',
+            firstStack: first.stack,
+            lastStack: last.stack, 
+            firstBet: 0,
+            lastBet: 0,
+            pot: 0,
+            board: [], 
+            bettor: null, 
+            action: null, 
+            bet: null,
+            streetHistory: [],
+            previousAction: null,
+            previousBet: null
+        }
         this.firstPocket = []
         this.lastPocket = []
         this.deck = DECK.slice()
@@ -142,6 +160,8 @@ function startNewGame(match) {
     const game = new Game(gameNumber, bigBlind, button)
     games.push(game)
     game.state.room = match.room
+    button.socket.emit('button', game.state)
+    bigBlind.socket.emit('big blind', game.state)
     game.firstPocket.push(deal(game.deck))
     game.firstPocket.push(deal(game.deck))
     game.lastPocket.push(deal(game.deck))
@@ -177,8 +197,10 @@ io.use((socket, next)=> {
     if (!players.includes(user)) {
         players.push(user)
     }
+    if (players.length == 2) {
     matches[0] = new Match('1234', players[0], players[1])
     console.log(matches[0])
+    }
     //end testing
 
     print('connection!')
@@ -222,7 +244,11 @@ io.on('connection', (socket) => {
 
     socket.on('accept', opponent => {
         const challenger = players.find(x => x.username == opponent)
-        const challengee = findUser(socket.sessionID)
+        const challengee = FindUser(socket.sessionID)
+        challenger.stack = null
+        challengee.stack = null
+        console.log(challenger)
+        console.log(challengee)
         challenger.socket.emit('accepted')
         const room = '/match/' + Math.floor(Math.random() * 100000)
         const match = new Match(room, challenger.username, challengee.username)
@@ -274,15 +300,50 @@ io.on('connection', (socket) => {
         match.status = 'waiting'
     })
 
+
     socket.on('action', (state) => {
         const match = matches.find(x => x.room = state.room)
         const game = games.find(x => x.meta.id == state.id)
         const first = game.meta.first
         const last = game.meta.last
         const thisPlayer = findUser(socket.sessionID)
-        console.log(state)
+
+    
+
+       
+        let grab = null
+        let alreadyIn = null
+        if (state.bettor == 'first') {
+            alreadyIn = game.state.firstBet
+            grab = state.bet - game.state.firstBet
+            game.state.firstStack -= grab
+            game.state.firstBet = state.bet
+           
+        } else {
+            alreadyIn = game.state.lastBet
+            grab = state.bet - game.state.lastBet 
+            game.state.lastStack -= grab
+            game.state.lastBet = state.bet
+        }
+        if (state.action == 'raise') {
+            game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
+        if (state.action == 'call') {
+            console.log( game.state.bet + ' ' + alreadyIn + ' ****')
+            game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
+        game.state.bettor = state.bettor
+        game.state.bet = state.bet
+        game.state.action = state.action
+        
+        console.log(game.state)
+        first.stack = game.state.firstStack
+        last.stack = game.state.lastStack
+        console.log(`first: ${first.stack} last: ${last.stack}`)
         game.history.push(JSON.stringify(state))
-        game.state.previousAction = state.action
+        first.socket.emit('state', game.state)
+        last.socket.emit('state', game.state)
+       
         let nextPlayer = null
         if (actionIsOpen(state)){
             console.log('open')
@@ -290,9 +351,10 @@ io.on('connection', (socket) => {
                 nextPlayer = game.meta.last
             else
                 nextPlayer = game.meta.first
-            game.state.bettor = nextPlayer.username
-            game.state.action = state.action
 
+            game.state.previousAction = state.action
+            game.state.action = state.action
+            game.state.bet = state.bet
         } else {
             console.log('closed')
             nextPlayer = game.meta.first
@@ -329,8 +391,44 @@ io.on('connection', (socket) => {
                     last.socket.emit('deal', game.firstPocket[1], 'his-pocket-2')
             }
             game.state.bettor = null
+            game.state.bet = 0
             game.state.action = null
             game.state.previousAction = null
+            game.state.firstBet  = 0
+            game.state.lastBet = 0
+            first.socket.emit('state', game.state)
+            last.socket.emit('state', game.state)
+    
+        }
+
+        if (game.state.street == 'showdown') {
+            
+            const firstHand = Hand.solve(game.firstPocket.concat(game.state.board))
+            const lastHand = Hand.solve(game.lastPocket.concat(game.state.board))
+            const winner = Hand.winners([firstHand, lastHand])
+            const firstIsWinner = (winner.toString() == firstHand.toString())
+            const lastIsWinner = (winner.toString() == lastHand.toString())
+            const chop = (firstIsWinner && lastIsWinner)
+            if (!chop) {
+                if (firstIsWinner) {
+                    console.log('first won')
+                    first.socket.emit('win hand')
+                    last.socket.emit('lose hand')
+                    first.stack += game.state.pot
+                } else {
+                    console.log('last won')
+                    first.socket.emit('lose hand')
+                    last.socket.emit('win hand')
+                    last.stack += game.state.pot
+                }
+            } else {
+                first.socket.emit('chop')
+                last.socket.emit('chop')
+                first.stack += game.state.pot / 2
+                last.stack += game.state.pot / 2
+            }
+            game.state.street = 'done'
+            
         }
         
         if (game.state.street == 'done') {
@@ -340,8 +438,8 @@ io.on('connection', (socket) => {
             const last = game.meta.last.username
             const data = {room: room, id: id, first: first, last: last}
             match.log.push(JSON.stringify(data))
-            if (match.status == 'playing')
-                startNewGame(match)
+            if (match.status == 'playing') 
+                setTimeout(startNewGame, 3000, match)
         } else
             nextPlayer.socket.emit('action', game.state)
     })

@@ -14,6 +14,12 @@ const board2 = document.getElementById('board-2')
 const board3 = document.getElementById('board-3')
 const board4 = document.getElementById('board-4')
 const board5 = document.getElementById('board-5')
+const messageBar = document.getElementById('message-bar')
+const myStack = document.getElementById('my-stack')
+const hisStack = document.getElementById('his-stack')
+const myBet = document.getElementById('my-bet')
+const hisBet = document.getElementById('his-bet')
+const pot = document.getElementById('pot')
 
 // for testing .. .
 sessionStorage.setItem('room', '1234')
@@ -34,8 +40,34 @@ function showActions(action) {
 
 let sessionID = sessionStorage.getItem('sessionID')
 let room = sessionStorage.getItem('room')
-let gameState = null
+let gameState = sessionStorage.getItem('gameState')
+let position = sessionStorage.getItem('position')
 
+
+function updateStacks(state) {
+    let myStackSize = null
+    let hisStackSize = null
+    let betSize = null
+    let myBetSize = null
+
+
+    if (position == 'last') {
+        myStackSize = state.lastStack
+        myBetSize = state.lastBet
+        hisStackSize = state.firstStack
+        hisBetSize = state.firstBet
+    } else {
+        myStackSize = state.firstStack
+        myBetSize = state.firstBet
+        hisStackSize = state.lastStack
+        hisBetSize = state.lastBet
+    }
+    myStack.innerText = myStackSize
+    hisStack.innerText = hisStackSize
+    myBet.innerText = myBetSize
+    hisBet.innerText = hisBetSize
+    pot.innerText = state.pot - 2 * Math.min(myBetSize, hisBetSize)
+}
 //for testing
 //let username = sessionStorage.getItem('username')
 // end testing
@@ -59,15 +91,31 @@ sit.addEventListener('click', () => {
 
 actionButtons.addEventListener('click', (e) => {
     console.log(e.target)
-    gameState.action = e.target.innerText
-    gameState.bettor = username
+    const a = e.target.innerText
+    gameState.action = a
+    gameState.bettor = position
+    if ((a == 'bet') || (a == 'raise')) {
+        const x = prompt('how much?')
+        gameState.bet = parseInt(x)
+    }
+    if (a == 'check') {
+        gameState.bet = 0
+    }
     actionButtons.style.display = 'none'
     socket.emit('action', gameState)
+})
+
+socket.on('state', state => {
+    sessionStorage.setItem('gameState', state)
+    gameState = state
+    updateStacks(state)
 })
 
 socket.on('action', state => {
     sessionStorage.setItem('gameState', state)
     gameState = state
+    //Object.assign(gameState, state)
+    updateStacks(state)
     console.log(state)
     showActions(state.action)
 })
@@ -96,10 +144,40 @@ function translate(card) {
 
 }
 
+socket.on('button', (state) => {
+    position = 'last'
+    updateStacks(state)
+    sessionStorage.setItem('position', position)
+})
+
+socket.on('big blind', (state) => {
+    position = 'first'
+    sessionStorage.setItem('position', position)
+    updateStacks(state)
+})
+
 socket.on('deal', (card, imageID) => {
     const img = document.getElementById(imageID)
     img.setAttribute('src', translate(card))
 }) 
+
+socket.on('lose hand', () => {
+    console.log('lost')
+    messageBar.style.backgroundColor = 'red';
+    messageBar.innerText = 'you lose';
+    messageBar.style.display = 'flex';
+})
+socket.on('win hand', () => {
+    console.log('won')
+    messageBar.style.backgroundColor = 'green';
+    messageBar.innerText = 'you win';
+    messageBar.style.display = 'flex';
+})
+socket.on('chop', () => {
+    messageBar.style.backgroundColor = 'gray';
+    messageBar.innerText = 'chop';
+    messageBar.style.display = 'flex';
+})
 
 socket.on('new game', () => {
     myPocket1.setAttribute('src', '../cards/blue2.svg')
@@ -111,6 +189,7 @@ socket.on('new game', () => {
     board3.setAttribute('src', '../cards/blue2.svg')
     board4.setAttribute('src', '../cards/blue2.svg')
     board5.setAttribute('src', '../cards/blue2.svg')
+    messageBar.style.display = 'none'
 })
 
 socket.on('sessionID', (sessionID, playerName) => {

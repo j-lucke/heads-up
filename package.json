@@ -12,6 +12,7 @@
     "escape-html": "^1.0.3",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
+    "pokersolver": "^2.1.4",
     "socket.io": "^4.6.1"
   }
 }
