@@ -20,9 +20,14 @@ const hisStack = document.getElementById('his-stack')
 const myBet = document.getElementById('my-bet')
 const hisBet = document.getElementById('his-bet')
 const pot = document.getElementById('pot')
+const rebuyWindow = document.getElementById('rebuy-window')
+const rebuyInput = document.getElementById('rebuy-input')
+const getChips = document.getElementById('get-chips')
 
 // for testing .. .
 sessionStorage.setItem('room', '1234')
+let stakes = 10
+let firstAction = false
 //end
 
 function showActions(action) {
@@ -35,6 +40,10 @@ function showActions(action) {
         action2.innerText = 'call'
         action3.innerText = 'raise'
     }
+    if (action == 'call big blind') {
+        action2.innerText = 'check option'
+        action3.innerText = 'raise option'
+    }
     actionButtons.style.display = 'flex'
 }
 
@@ -43,6 +52,40 @@ let room = sessionStorage.getItem('room')
 let gameState = sessionStorage.getItem('gameState')
 let position = sessionStorage.getItem('position')
 
+function betIsLegal(bet, state) {
+
+    let inFrontOfMe = null
+    let myStack = null
+    if (position == 'first') {
+        inFrontOfMe = state.firstBet
+        myStack = state.firstStack
+    } else {
+        inFrontOfMe = state.lastBet
+        myStack = state.lastStack
+    }
+
+    if (bet > inFrontOfMe + myStack) {
+        console.log('bet is too big')
+        return false
+    }
+
+    if (bet == inFrontOfMe + myStack) {
+        console.log('all in')
+        return true
+    }
+
+    if (bet - state.bet < stakes) {
+        console.log('bet too small')
+        return false
+    }
+    if (bet - state.bet < state.bet - inFrontOfMe) {
+        console.log(`!! ${bet} - ${state.bet} < ${state.bet} - ${inFrontOfMe}`)
+        return false
+    }
+    return true
+    
+    
+}
 
 function updateStacks(state) {
     let myStackSize = null
@@ -89,18 +132,53 @@ sit.addEventListener('click', () => {
     }
 })
 
+getChips.addEventListener('click', () => {
+    rebuyWindow.style.display = 'none'
+    const amount = parseInt(rebuyInput.value)
+    socket.emit('rebuy', room, amount)
+})
+
 actionButtons.addEventListener('click', (e) => {
-    console.log(e.target)
     const a = e.target.innerText
     gameState.action = a
     gameState.bettor = position
-    if ((a == 'bet') || (a == 'raise')) {
-        const x = prompt('how much?')
-        gameState.bet = parseInt(x)
+    let myStackSize = null
+    let inFrontOfMe = null
+    if (position == 'first') {
+        myStackSize = gameState.firstStack
+        inFrontOfMe = gameState.firstBet
+    } else {
+        myStackSize = gameState.lastStack
+        inFrontOfMe = gameState.lastBet
+    }
+    if ((a == 'bet') || (a == 'raise') || (a == 'raise option')) {
+        let x = null
+        do {
+            x = parseInt(prompt('how much?'))
+        } while (!betIsLegal(x, gameState))
+        gameState.bet = x
+        if (x == myStackSize + inFrontOfMe) {
+            gameState.action += ' all in'
+        }
     }
     if (a == 'check') {
         gameState.bet = 0
     }
+    if (a == 'check option') {
+        gameState.bet = 20
+    }
+    if (a == 'call') {
+        if (gameState.bet > myStackSize) {
+            gameState.action = 'call all in for less'
+        }
+        if (gameState.bet == myStackSize + inFrontOfMe) {
+            gameState.action = 'call all in'
+        }
+        if (firstAction) {
+            gameState.action = 'call big blind'
+        }
+    }
+    firstAction = false
     actionButtons.style.display = 'none'
     socket.emit('action', gameState)
 })
@@ -117,7 +195,13 @@ socket.on('action', state => {
     //Object.assign(gameState, state)
     updateStacks(state)
     console.log(state)
-    showActions(state.action)
+    if (state.noFurtherAction) {
+        gameState.action = 'none'
+        setTimeout( () => {socket.emit('action', gameState)}, 1000)
+        //socket.emit('action', gameState)
+    } else {
+        showActions(state.action)
+    }
 })
 
 function translate(card) {
@@ -148,6 +232,7 @@ socket.on('button', (state) => {
     position = 'last'
     updateStacks(state)
     sessionStorage.setItem('position', position)
+    firstAction = 'true'
 })
 
 socket.on('big blind', (state) => {
@@ -178,6 +263,13 @@ socket.on('chop', () => {
     messageBar.innerText = 'chop';
     messageBar.style.display = 'flex';
 })
+
+socket.on('rebuy', () => {
+    setTimeout( () => {
+        
+        rebuyWindow.style.display = 'flex'
+    }, 2000)
+}) 
 
 socket.on('new game', () => {
     myPocket1.setAttribute('src', '../cards/blue2.svg')

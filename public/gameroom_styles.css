@@ -86,3 +86,10 @@
 
 #my-pocket-2 {
 }
+
+#rebuy-window {
+    display: none;
+    position: fixed;
+    left: 50%;
+    right: 50%;
+}

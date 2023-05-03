@@ -71,24 +71,26 @@ class Match {
 
 class Game{
     constructor(id, first, last) {
-        this.room = this.room
         this.meta = {id: id, first: first, last: last}
         this.state = {
             id: id, 
             street: 'preflop',
-            firstStack: first.stack,
-            lastStack: last.stack, 
-            firstBet: 0,
-            lastBet: 0,
-            pot: 0,
+            firstStack: first.stack - 20,
+            lastStack: last.stack - 10, 
+            firstBet: 20,
+            lastBet: 10,
+            pot: 20,
             board: [], 
-            bettor: null, 
-            action: null, 
-            bet: null,
-            streetHistory: [],
-            previousAction: null,
-            previousBet: null
+            bettor: 'first', 
+            action: 'raise', 
+            bet: 20,
+            noFurtherAction: false,
+            previousAction: 'bet',
+            previousBet: 10
         }
+        first.stack -= 20
+        this.meta.last.stack -= 10
+        console.log(this.meta.first)
         this.firstPocket = []
         this.lastPocket = []
         this.deck = DECK.slice()
@@ -123,12 +125,18 @@ function incStreet(street) {
 
 function actionIsOpen(state) {
     let {action, previousAction} = state
-    if ((action == 'bet') || (action == 'raise'))
+    if (action == 'call big blind') 
         return true
-    if (action == 'call')
+    if ((action.includes('bet')) || (action.includes('raise')))
+        return true
+    if (action.includes('call'))
         return false
-    if (action == 'check')
-        return (previousAction != 'check')
+    if (action == 'check') {
+        let temp = true
+        if ((previousAction == 'check') || (previousAction == 'call big blind'))
+            temp = false
+        return temp
+    }
     return false
 }
 
@@ -170,7 +178,8 @@ function startNewGame(match) {
     bigBlind.socket.emit('deal', game.firstPocket[1], 'my-pocket-2')
     button.socket.emit('deal', game.lastPocket[0], 'my-pocket-1')
     button.socket.emit('deal', game.lastPocket[1], 'my-pocket-2')
-    game.meta.first.socket.emit('action', game.state)
+    game.meta.last.socket.emit('action', game.state)
+    console.log(game.state)
     match.status = 'playing'
 }
 
@@ -309,28 +318,79 @@ io.on('connection', (socket) => {
         const thisPlayer = findUser(socket.sessionID)
 
     
+        if (state.action == 'fold') {
+            if (state.bettor == 'first') {
+                console.log(game.meta.last.stack)
+                game.meta.last.stack += (game.state.pot  + game.state.bet - game.state.firstBet)
+                console.log(`${game.meta.last.stack} += ${game.state.pot} + ${game.state.bet} - ${game.state.firstBet}`)
+            } else {
+                game.meta.first.stack += game.state.pot + game.state.bet - game.state.lastBet
+            }
 
+            const data = {room: game.meta.room, id: game.meta.id, first: first.username, last: last.username}
+            match.log.push(JSON.stringify(data))
+
+            if (match.status == 'playing') 
+                setTimeout(startNewGame, 3000, match)
+            return
+        }
        
         let grab = null
         let alreadyIn = null
+        let refund = null
         if (state.bettor == 'first') {
             alreadyIn = game.state.firstBet
             grab = state.bet - game.state.firstBet
+            console.log(grab + ' ' + state.bet + ' ' + game.state.firstBet)
             game.state.firstStack -= grab
             game.state.firstBet = state.bet
-           
         } else {
             alreadyIn = game.state.lastBet
             grab = state.bet - game.state.lastBet 
             game.state.lastStack -= grab
             game.state.lastBet = state.bet
         }
+
+        if (((game.state.firstStack <= 0) || (game.state.lastStack <= 0)) && state.action.includes('call')) {
+            console.log('no further action!')
+            game.state.noFurtherAction = true
+        }
+        if (state.action == 'raise option') {
+            
+        }
+        if (state.action == 'call big blind') {
+            game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
         if (state.action == 'raise') {
             game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
+        if (state.action == 'raise all in') {
+            console.log('raise all in')
+            game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
+        if (state.action == 'bet all in') {
+            console.log('bet all in')
         }
         if (state.action == 'call') {
             console.log( game.state.bet + ' ' + alreadyIn + ' ****')
             game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
+        if (state.action == 'call all in') {
+            console.log('call all in')
+            game.state.pot += 2 * (game.state.bet - alreadyIn)
+        }
+        if (state.action == 'call all in for less') {
+            console.log('all in for less')
+            if (state.bettor == 'first') {
+                refund = game.state.firstStack
+                game.state.firstStack = 0
+                game.state.lastStack -= refund
+            } else {
+                refund = game.state.lastStack
+                game.state.lastStack = 0
+                game.state.firstStack -= refund
+            }
+            game.state.pot += 2 * (game.state.bet + - alreadyIn + refund)
         }
         game.state.bettor = state.bettor
         game.state.bet = state.bet
@@ -397,8 +457,7 @@ io.on('connection', (socket) => {
             game.state.firstBet  = 0
             game.state.lastBet = 0
             first.socket.emit('state', game.state)
-            last.socket.emit('state', game.state)
-    
+            last.socket.emit('state', game.state)    
         }
 
         if (game.state.street == 'showdown') {
@@ -436,12 +495,36 @@ io.on('connection', (socket) => {
             let {room, id} = game.meta
             const first = game.meta.first.username
             const last = game.meta.last.username
+
+
+
             const data = {room: room, id: id, first: first, last: last}
             match.log.push(JSON.stringify(data))
+            if (match.player1.stack == 0) {
+                match.status = 'waiting'
+                match.player1.socket.emit('rebuy')
+                console.log('rebuy')
+            }
+            if (match.player2.stack == 0) {
+                match.status = 'waiting'
+                match.player2.socket.emit('rebuy')
+                console.log('rebuy')
+            }
             if (match.status == 'playing') 
                 setTimeout(startNewGame, 3000, match)
         } else
             nextPlayer.socket.emit('action', game.state)
+    })
+
+    socket.on('rebuy', (room, amount) => {
+        const match = matches.find(x => x.room == room)
+        player = findUser(socket.sessionID)
+        player.stack = amount
+        if ((match.sitting == 2)) {
+            match.player1.socket.emit('new game')
+            match.player2.socket.emit('new game')
+            startNewGame(match)
+        }
     })
 
     socket.on('disconnect', () => {
