@@ -90,7 +90,7 @@ function betIsLegal(bet, state) {
 function updateStacks(state) {
     let myStackSize = null
     let hisStackSize = null
-    let betSize = null
+    let hisBetSize = null
     let myBetSize = null
 
 
@@ -104,6 +104,16 @@ function updateStacks(state) {
         myBetSize = state.firstBet
         hisStackSize = state.lastStack
         hisBetSize = state.lastBet
+    }
+    if (myBetSize == 0) {
+        myBet.style.display = 'none'
+    } else {
+        myBet.style.display = 'block'
+    }
+    if (hisBetSize == 0) {
+        hisBet.style.display = 'none'
+    }else {
+        hisBet.style.display = 'block'
     }
     myStack.innerText = myStackSize
     hisStack.innerText = hisStackSize
