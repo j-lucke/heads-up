@@ -12,14 +12,18 @@ const declineChallenge = document.getElementById('decline-challenge')
 
 
 let sessionID = sessionStorage.getItem('sessionID')
-let username = null
+let username = sessionStorage.getItem('username')
 let challengeOpponent = null
 
 if (sessionID) {
     socket.auth = {sessionID}
     console.log('continuing session ' + sessionID)
 } 
+
+
 socket.connect()
+
+
 
 getChallenge = (e) => {
     const target = e.target
@@ -37,9 +41,17 @@ getChallenge = (e) => {
     challengeBanner.style.display = 'flex'
 }
 
+if (username) {
+    loginLink.innerText = username
+    players.addEventListener('click', getChallenge)
+    //socket.emit('players')
+}
+
+
 loginLink.addEventListener('click', () => {
     if (loginLink.innerText == sessionStorage.getItem('sessionID')) {
         username = prompt('choose a username')
+        sessionStorage.setItem('username', username)
         loginLink.innerText = username
         players.addEventListener('click', getChallenge)
         socket.emit('login', username)
@@ -141,7 +153,7 @@ socket.on('player down', playername => {
     li.remove()
 })
 
-socket.on('new match', match => {
-    sessionStorage.setItem('room', match.room)
-    window.location.href = match.room
+socket.on('new match', room => {
+    sessionStorage.setItem('room', room)
+    window.location.href = room
 })

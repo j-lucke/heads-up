@@ -14,11 +14,11 @@ app = express()
 const httpServer = createServer(app);
 const io = new Server(httpServer)
 
-//app.use(log)
+app.use(log)
+/*
 app.get('/', (req, res) => {
-    console.log('redirect')
-    res.redirect('/match/1234')
 })
+*/
 
 app.use(express.static(path.join(__dirname, 'public')))
 app.get('/match/:room', (req, res) => {
@@ -59,9 +59,9 @@ class Match {
     constructor(room, player1, player2) {
         this.room = room
         this.player1 = player1
-        this.player1.stack = 1000
         this.player2 = player2
-        this.player2.stack = 1000
+        player1.stack = 1000
+        player2.stack = 1000
         this.sitting = 0
         this.log = []
         this.status = 'waiting'
@@ -90,11 +90,11 @@ class Game{
         }
         first.stack -= 20
         this.meta.last.stack -= 10
-        console.log(this.meta.first)
         this.firstPocket = []
         this.lastPocket = []
         this.deck = DECK.slice()
         this.history = []
+        this.actionOn = 'nobody'
     }
 }
 
@@ -146,8 +146,8 @@ matches = []
 games = []
 
 function startNewGame(match) {
-    match.player1.socket.emit('new game')
-    match.player2.socket.emit('new game')
+    match.player1.socket.emit('new game', match.player2.username)
+    match.player2.socket.emit('new game', match.player1.username)
     const handNumber = match.log.length
     let button = null
     let bigBlinld = null
@@ -178,8 +178,8 @@ function startNewGame(match) {
     bigBlind.socket.emit('deal', game.firstPocket[1], 'my-pocket-2')
     button.socket.emit('deal', game.lastPocket[0], 'my-pocket-1')
     button.socket.emit('deal', game.lastPocket[1], 'my-pocket-2')
+    game.actionOn = 'last'
     game.meta.last.socket.emit('action', game.state)
-    console.log(game.state)
     match.status = 'playing'
 }
 
@@ -201,6 +201,7 @@ io.use((socket, next)=> {
     }
 
     //this next block is for testing
+    /*
     const user = users.find(x => x.sessionID == socket.sessionID)
     user.username = user.sessionID
     if (!players.includes(user)) {
@@ -210,6 +211,7 @@ io.use((socket, next)=> {
     matches[0] = new Match('1234', players[0], players[1])
     console.log(matches[0])
     }
+    */
     //end testing
 
     print('connection!')
@@ -223,6 +225,11 @@ io.on('connection', (socket) => {
     socket.emit('sessionID', socket.sessionID, playerName)
     socket.emit('players', players.map(x => x.username))
     console.log(socket.id)
+
+    socket.on('players', () => {
+        socket.emit('players', players.map(x => x.username))
+    })
+
     socket.on('login', (username)=> {
         const user = findUser(socket.sessionID)
         if (user) {
@@ -246,23 +253,19 @@ io.on('connection', (socket) => {
     socket.on('challenge', opponent => {
         const challenger = findUser(socket.sessionID)
         const challengee = players.find(x => x.username == opponent)
-        console.log('\n' + '\n' + 'CHALLENGE:')
-        console.log(challenger.username + ' v ' + challengee.username)
         challengee.socket.emit('challenge', challenger.username)
     })
 
     socket.on('accept', opponent => {
         const challenger = players.find(x => x.username == opponent)
-        const challengee = FindUser(socket.sessionID)
+        const challengee = findUser(socket.sessionID)
         challenger.stack = null
         challengee.stack = null
-        console.log(challenger)
-        console.log(challengee)
         challenger.socket.emit('accepted')
         const room = '/match/' + Math.floor(Math.random() * 100000)
-        const match = new Match(room, challenger.username, challengee.username)
-        challenger.socket.emit('new match', match)
-        challengee.socket.emit('new match', match)
+        const match = new Match(room, challenger, challengee)
+        challenger.socket.emit('new match', match.room)
+        challengee.socket.emit('new match', match.room)
         matches.push(match)
     })
 
@@ -276,7 +279,6 @@ io.on('connection', (socket) => {
     })
 
     socket.on('ready', room => {
-        console.log('ready')
         const match = matches.find(x => x.room == room)
         if (match.state == 'empty') {
             match.state = 'waiting'
@@ -316,13 +318,11 @@ io.on('connection', (socket) => {
         const first = game.meta.first
         const last = game.meta.last
         const thisPlayer = findUser(socket.sessionID)
-
+        game.actionOn = 'nobody'
     
         if (state.action == 'fold') {
             if (state.bettor == 'first') {
-                console.log(game.meta.last.stack)
                 game.meta.last.stack += (game.state.pot  + game.state.bet - game.state.firstBet)
-                console.log(`${game.meta.last.stack} += ${game.state.pot} + ${game.state.bet} - ${game.state.firstBet}`)
             } else {
                 game.meta.first.stack += game.state.pot + game.state.bet - game.state.lastBet
             }
@@ -341,7 +341,6 @@ io.on('connection', (socket) => {
         if (state.bettor == 'first') {
             alreadyIn = game.state.firstBet
             grab = state.bet - game.state.firstBet
-            console.log(grab + ' ' + state.bet + ' ' + game.state.firstBet)
             game.state.firstStack -= grab
             game.state.firstBet = state.bet
         } else {
@@ -352,7 +351,6 @@ io.on('connection', (socket) => {
         }
 
         if (((game.state.firstStack <= 0) || (game.state.lastStack <= 0)) && state.action.includes('call')) {
-            console.log('no further action!')
             game.state.noFurtherAction = true
         }
         if (state.action == 'raise option') {
@@ -365,22 +363,17 @@ io.on('connection', (socket) => {
             game.state.pot += 2 * (game.state.bet - alreadyIn)
         }
         if (state.action == 'raise all in') {
-            console.log('raise all in')
             game.state.pot += 2 * (game.state.bet - alreadyIn)
         }
         if (state.action == 'bet all in') {
-            console.log('bet all in')
         }
         if (state.action == 'call') {
-            console.log( game.state.bet + ' ' + alreadyIn + ' ****')
             game.state.pot += 2 * (game.state.bet - alreadyIn)
         }
         if (state.action == 'call all in') {
-            console.log('call all in')
             game.state.pot += 2 * (game.state.bet - alreadyIn)
         }
         if (state.action == 'call all in for less') {
-            console.log('all in for less')
             if (state.bettor == 'first') {
                 refund = game.state.firstStack
                 game.state.firstStack = 0
@@ -396,27 +389,25 @@ io.on('connection', (socket) => {
         game.state.bet = state.bet
         game.state.action = state.action
         
-        console.log(game.state)
         first.stack = game.state.firstStack
         last.stack = game.state.lastStack
-        console.log(`first: ${first.stack} last: ${last.stack}`)
         game.history.push(JSON.stringify(state))
         first.socket.emit('state', game.state)
         last.socket.emit('state', game.state)
        
         let nextPlayer = null
         if (actionIsOpen(state)){
-            console.log('open')
-            if (socket == game.meta.first.socket)
+            if (socket == game.meta.first.socket) {
+                game.actionOn = 'last'
                 nextPlayer = game.meta.last
-            else
+            } else {
+                game.actionOn = 'first'
                 nextPlayer = game.meta.first
-
+            }
             game.state.previousAction = state.action
             game.state.action = state.action
             game.state.bet = state.bet
         } else {
-            console.log('closed')
             nextPlayer = game.meta.first
             game.state.street = incStreet(game.state.street)
             if (state.action == 'fold')
@@ -456,6 +447,7 @@ io.on('connection', (socket) => {
             game.state.previousAction = null
             game.state.firstBet  = 0
             game.state.lastBet = 0
+            game.actionOn = 'first'
             first.socket.emit('state', game.state)
             last.socket.emit('state', game.state)    
         }
@@ -470,12 +462,10 @@ io.on('connection', (socket) => {
             const chop = (firstIsWinner && lastIsWinner)
             if (!chop) {
                 if (firstIsWinner) {
-                    console.log('first won')
                     first.socket.emit('win hand')
                     last.socket.emit('lose hand')
                     first.stack += game.state.pot
                 } else {
-                    console.log('last won')
                     first.socket.emit('lose hand')
                     last.socket.emit('win hand')
                     last.stack += game.state.pot
@@ -491,7 +481,6 @@ io.on('connection', (socket) => {
         }
         
         if (game.state.street == 'done') {
-            console.log('GAME OVER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             let {room, id} = game.meta
             const first = game.meta.first.username
             const last = game.meta.last.username
@@ -503,15 +492,15 @@ io.on('connection', (socket) => {
             if (match.player1.stack == 0) {
                 match.status = 'waiting'
                 match.player1.socket.emit('rebuy')
-                console.log('rebuy')
             }
             if (match.player2.stack == 0) {
                 match.status = 'waiting'
                 match.player2.socket.emit('rebuy')
-                console.log('rebuy')
             }
-            if (match.status == 'playing') 
+            console.log('!!')
+            if (match.status == 'playing') {
                 setTimeout(startNewGame, 3000, match)
+            }
         } else
             nextPlayer.socket.emit('action', game.state)
     })
@@ -525,6 +514,22 @@ io.on('connection', (socket) => {
             match.player2.socket.emit('new game')
             startNewGame(match)
         }
+    })
+
+    socket.on('recover', () => {
+        const player = findUser(socket.sessionID)
+        console.log('recovering game state for: ' + player.username)
+        const game = games.findLast(x => [x.meta.first, x.meta.last].includes(player))
+        let pocket 
+        
+        if (game.meta.first == player) {
+            pocket = game.firstPocket
+        } else {
+            pocket = game.lastPocket
+        }
+        
+        socket.emit('recover', game.state, game.actionOn, pocket)
+        
     })
 
     socket.on('disconnect', () => {

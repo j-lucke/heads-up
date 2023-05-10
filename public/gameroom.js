@@ -19,13 +19,16 @@ const myStack = document.getElementById('my-stack')
 const hisStack = document.getElementById('his-stack')
 const myBet = document.getElementById('my-bet')
 const hisBet = document.getElementById('his-bet')
+const hisName = document.getElementById('his-name')
 const pot = document.getElementById('pot')
 const rebuyWindow = document.getElementById('rebuy-window')
 const rebuyInput = document.getElementById('rebuy-input')
 const getChips = document.getElementById('get-chips')
 
 // for testing .. .
+/*
 sessionStorage.setItem('room', '1234')
+*/
 let stakes = 10
 let firstAction = false
 //end
@@ -47,10 +50,15 @@ function showActions(action) {
     actionButtons.style.display = 'flex'
 }
 
+let amSitting = sessionStorage.getItem('amSitting')
+let refreshed = sessionStorage.getItem('refreshed')
+let pocketCard1 = sessionStorage.getItem('pocketCard1')
+let pocketCard2 = sessionStorage.getItem('pocketCard2')
 let sessionID = sessionStorage.getItem('sessionID')
 let room = sessionStorage.getItem('room')
-let gameState = sessionStorage.getItem('gameState')
+let gameState = JSON.parse(sessionStorage.getItem('gameState'))
 let position = sessionStorage.getItem('position')
+let hisUserName = sessionStorage.getItem('hisUserName')
 
 function betIsLegal(bet, state) {
 
@@ -132,11 +140,22 @@ if (sessionID) {
 } 
 socket.connect()
 
+if (refreshed == 'true') {
+    socket.emit('recover')
+    console.log('initiating recovery')
+}
+
+sessionStorage.setItem('refreshed', 'true')
+
 sit.addEventListener('click', () => {
     if (sit.innerText == 'sit') {
+        amSitting = 'true'
+        sessionStorage.setItem('amSitting', amSitting)
         sit.innerText = 'stand up'
         socket.emit('sit', room)
     } else {
+        amSitting = 'false'
+        sessionStorage.setItem('amSitting', amSitting)
         sit.innerText = 'sit'
         socket.emit('stand', room)
     }
@@ -194,17 +213,16 @@ actionButtons.addEventListener('click', (e) => {
 })
 
 socket.on('state', state => {
-    sessionStorage.setItem('gameState', state)
+    sessionStorage.setItem('gameState', JSON.stringify(state))
     gameState = state
     updateStacks(state)
 })
 
 socket.on('action', state => {
-    sessionStorage.setItem('gameState', state)
+    sessionStorage.setItem('gameState', JSON.stringify(state))
     gameState = state
     //Object.assign(gameState, state)
     updateStacks(state)
-    console.log(state)
     if (state.noFurtherAction) {
         gameState.action = 'none'
         setTimeout( () => {socket.emit('action', gameState)}, 1000)
@@ -254,6 +272,12 @@ socket.on('big blind', (state) => {
 socket.on('deal', (card, imageID) => {
     const img = document.getElementById(imageID)
     img.setAttribute('src', translate(card))
+    if (imageID == 'my-pocket-1') {
+        sessionStorage.setItem('pocketCard1', card)
+    }
+    if (imageID == 'my-pocket-2') {
+        sessionStorage.setItem('pocketCard2', card)
+    }
 }) 
 
 socket.on('lose hand', () => {
@@ -281,7 +305,37 @@ socket.on('rebuy', () => {
     }, 2000)
 }) 
 
-socket.on('new game', () => {
+socket.on('recover', (state, actionOn, pocket) => {
+    hisName.innerText = sessionStorage.getItem('hisUserName')
+    amSitting = sessionStorage.getItem('amSitting')
+    if (amSitting == 'true') {
+        sit.innerText = 'stand up'
+    } else {
+        sit.innerText = 'sit'
+    }
+    myPocket1.setAttribute('src', translate(pocket[0]))
+    myPocket2.setAttribute('src', translate(pocket[1]))
+    sessionStorage.setItem('gameState', JSON.stringify(state))
+    gameState = state
+    updateStacks(state)
+    let counter = 1
+    state.board.forEach(card => {
+        const boardCard = document.getElementById('board-' + counter)
+        boardCard.setAttribute('src', translate(card))
+        counter++
+    })
+    if (state.noFurtherAction) {
+        gameState.action = 'none'
+        setTimeout( () => {socket.emit('action', gameState)}, 1000)
+    } else {
+        if (actionOn == position) {
+            console.log('two: ' + state.action)
+            showActions(state.action)
+        }    
+    }
+})
+
+socket.on('new game', (opponentsName) => {
     myPocket1.setAttribute('src', '../cards/blue2.svg')
     myPocket2.setAttribute('src', '../cards/blue2.svg')
     hisPocket1.setAttribute('src', '../cards/blue2.svg')
@@ -292,6 +346,8 @@ socket.on('new game', () => {
     board4.setAttribute('src', '../cards/blue2.svg')
     board5.setAttribute('src', '../cards/blue2.svg')
     messageBar.style.display = 'none'
+    hisName.innerText = opponentsName
+    sessionStorage.setItem('hisUserName', opponentsName)
 })
 
 socket.on('sessionID', (sessionID, playerName) => {
